@@ -3,12 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>D'ough! Pizza App</title>
+  <title>D'ough! Advanced Artisan</title>
   
-  <!-- Load Tailwind CSS for styling -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Setup Import Map for React and Icons -->
   <script type="importmap">
     {
       "imports": {
@@ -19,91 +17,84 @@
     }
   </script>
   
-  <!-- Load Babel to compile JSX in the browser -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-slide-in { animation: slideIn 0.3s ease-out forwards; }
+  </style>
 </head>
-<body class="bg-stone-50">
+<body class="bg-stone-100 text-slate-800 font-sans antialiased">
   
-  <!-- This is where the React App will render -->
   <div id="root"></div>
 
-  <!-- Our React Application Script -->
   <script type="text/babel" data-type="module">
     import React, { useState, useEffect, useMemo } from 'react';
     import { createRoot } from 'react-dom/client';
     import { 
       Pizza, Play, Pause, RotateCcw, ChevronRight, ChevronLeft, 
       Check, Thermometer, Droplets, Scale, Clock, Settings, ChefHat,
-      ChevronDown, Info, Beaker
+      ChevronDown, Info, Beaker, Plus, Wheat, Flame
     } from 'lucide-react';
+
+    // ---------- Data & Constants ----------
+    
+    const FLOURS = {
+      "All Purpose": { h: 60, desc: "Accessible, soft flour. Yields a tender crust. Best for lower temp home ovens." },
+      "00 Flour": { h: 62, desc: "Finely milled Italian flour. Requires blistering high heat (750°F+) to brown properly. Extensible and soft." },
+      "Bread Flour": { h: 65, desc: "Higher protein. Creates a strong gluten network for a chewy, airy crust. The gold standard for NY style." },
+      "White Spelt": { h: 60, desc: "Ancient grain with a nutty flavor. Weaker gluten than wheat, so knead gently to avoid tearing the dough." },
+      "Whole Wheat": { h: 72, desc: "Dense and very thirsty. The bran cuts gluten strands, meaning less rise, but offers incredible earthy flavor." },
+      "Whole Wheat Spelt": { h: 65, desc: "Earthy, nutty, and highly absorbent. Delicate structure; handle with care during stretching." }
+    };
+
+    const STYLES = {
+      "Neapolitan": { flour: "00 Flour", h: 62, s: 2.8, o: 0, sg: 0, desc: "Blistering hot oven. Thin center, puffy airy edges. Fast ferment." },
+      "NY Style": { flour: "Bread Flour", h: 63, s: 2.5, o: 2, sg: 1.5, desc: "The classic foldable slice. Crisp bottom, chewy edge, holds heavy toppings." },
+      "Pan / Sicilian": { flour: "Bread Flour", h: 72, s: 2.2, o: 3, sg: 0, desc: "Baked in an oiled pan. Thick, airy crumb with a fried-like crispy bottom." },
+      "Custom Artisan": { flour: "Bread Flour", h: 65, s: 2.4, o: 1, sg: 0, desc: "Blaze your own trail. You control all the variables." }
+    };
 
     // ---------- Utilities ----------
     const clamp = (n, min, max) => Math.min(max, Math.max(min, Number.isFinite(n) ? n : min));
     const r1 = (n) => Math.round((Number.isFinite(n) ? n : 0) * 10) / 10;
     const r0 = (n) => Math.round(Number.isFinite(n) ? n : 0);
 
-    const formatTime = (seconds) => {
-      const t = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
-      const m = String(Math.floor(t / 60)).padStart(2, "0");
-      const s = String(t % 60).padStart(2, "0");
-      return `${m}:${s}`;
+    const formatTime = (totalSeconds) => {
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = totalSeconds % 60;
+      if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     };
 
-    // ---------- Density for volume hints ----------
-    const DENSITY = { yeast: 3.1, salt: 6, sugar: 4, oil: 4.5 };
-
-    const tspApprox = (t) => {
-      const map = { 0.25: "¼ tsp", 0.33: "⅓ tsp", 0.5: "½ tsp", 0.75: "¾ tsp", 1: "1 tsp", 1.5: "1 ½ tsp", 2: "2 tsp", 3: "1 tbsp" };
-      let best = 0, err = 99;
-      Object.keys(map).forEach(k => {
-        const e = Math.abs(t - parseFloat(k));
-        if (e < err) { err = e; best = k; }
-      });
-      return map[best] || `${t.toFixed(1)} tsp`;
+    const calcIdealHydration = (baseFlour, blendFlour, blendPct) => {
+      const baseH = FLOURS[baseFlour].h;
+      if (!blendFlour || blendPct === 0) return baseH;
+      const altH = FLOURS[blendFlour].h;
+      return r0((baseH * ((100 - blendPct) / 100)) + (altH * (blendPct / 100)));
     };
 
-    const volHint = (type, g, yeastType) => {
-      if (!g || g >= 15) return "";
-      if (type === "yeast") {
-        if (yeastType === "Fresh") return g < 2 ? "≈ pea-sized" : "≈ marble-sized";
-        return `≈ ${tspApprox(g / DENSITY.yeast)}`;
-      }
-      if (type === "salt") return `≈ ${tspApprox(g / DENSITY.salt)}`;
-      if (type === "sugar") return `≈ ${tspApprox(g / DENSITY.sugar)}`;
-      if (type === "oil") return `≈ ${tspApprox(g / DENSITY.oil)}`;
-      return "";
-    };
-
-    // ---------- Presets ----------
-    const PRESETS = {
-      "Neapolitan": { h: 62, s: 2.6, o: 0, sg: 0, desc: "High heat, airy crust" },
-      "NY Style": { h: 65, s: 2.3, o: 2, sg: 1.5, desc: "Foldable, crispy bottom" },
-      "Sicilian": { h: 75, s: 2.5, o: 3, sg: 2, desc: "Thick, pan-baked square" },
-      "Classic": { h: 63, s: 2.4, o: 1, sg: 0.5, desc: "Great for home ovens" }
-    };
-
-    // ---------- Recipe Engine ----------
     function yeastPct(cold, temp) {
-      let base = cold ? 0.3 : 0.5;
-      if (temp > 78) base -= 0.1;
-      if (temp < 68) base += 0.1;
-      return clamp(base, 0.1, 1.2);
+      let base = cold ? 0.25 : 0.5; 
+      const tempDiff = temp - 72; 
+      base = base * Math.pow(0.92, tempDiff); 
+      return clamp(base, 0.05, 1.5);
     }
 
     function computeRecipe(cfg) {
       const totalWeight = cfg.balls * cfg.ballWeight;
       const yPct = yeastPct(cfg.cold, cfg.room);
-      
-      // Total baker's percentage
       const sumPct = 100 + cfg.hydration + cfg.salt + yPct + cfg.oil + cfg.sugar;
       
       const totalFlour = totalWeight * (100 / sumPct);
-      const isBlend = cfg.flour === 'Whole Wheat' || cfg.flour === 'Spelt Blend';
-      const blendRatio = isBlend ? (cfg.blendPct / 100) : 0;
+      const blendRatio = cfg.hasBlend ? (cfg.blendPct / 100) : 0;
       
       return {
         flourMain: r0(totalFlour * (1 - blendRatio)),
-        flourAlt: isBlend ? r0(totalFlour * blendRatio) : 0,
+        flourAlt: cfg.hasBlend ? r0(totalFlour * blendRatio) : 0,
         water: r0(totalFlour * cfg.hydration / 100),
         salt: r1(totalFlour * cfg.salt / 100),
         yeast: r1(totalFlour * yPct / 100),
@@ -117,92 +108,94 @@
 
     // ---------- UI Components ----------
 
-    const RangeSlider = ({ label, min, max, step = 1, value, onChange, unit = "", icon: Icon, advice = "" }) => (
-      <div className="mb-6">
+    const RangeSlider = ({ label, min, max, step = 1, value, onChange, unit = "", icon: Icon, advice = "", recommended = null }) => (
+      <div className="mb-6 animate-slide-in">
         <div className="flex justify-between items-end mb-2">
-          <label className="font-medium text-slate-700 flex items-center gap-2">
+          <label className="font-semibold text-slate-800 flex items-center gap-2">
             {Icon && <Icon className="w-4 h-4 text-orange-500" />}
             {label}
           </label>
-          <span className="text-lg font-bold text-orange-600">{value}{unit}</span>
+          <span className="text-xl font-black text-orange-600 tracking-tight">{value}{unit}</span>
         </div>
-        <input 
-          type="range" min={min} max={max} step={step} value={value} 
-          onChange={(e) => onChange(parseFloat(e.target.value))}
-          className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500" 
-        />
+        
+        <div className="relative pt-1 pb-2">
+          <input 
+            type="range" min={min} max={max} step={step} value={value} 
+            onChange={(e) => onChange(parseFloat(e.target.value))}
+            className="w-full h-2.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-orange-500" 
+          />
+          {recommended !== null && (
+            <div 
+              className="absolute top-0 w-1 h-4 bg-blue-500 rounded-full transform -translate-x-1/2 pointer-events-none transition-all"
+              style={{ left: `${((recommended - min) / (max - min)) * 100}%` }}
+              title={`Recommended: ${recommended}${unit}`}
+            >
+              <div className="absolute -top-5 left-1/2 transform -translate-x-1/2 text-[10px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200 shadow-sm opacity-80 whitespace-nowrap">
+                Ideal: {recommended}{unit}
+              </div>
+            </div>
+          )}
+        </div>
+
         {advice && (
-          <div className="mt-2 flex items-start gap-1.5 text-sm text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-100">
-            <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-            <p className="leading-tight">{advice}</p>
+          <div className="mt-2 flex items-start gap-2 text-sm text-slate-600 bg-white p-3 rounded-xl border border-slate-200 shadow-sm transition-all duration-300">
+            <Info className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
+            <p className="leading-relaxed">{advice}</p>
           </div>
         )}
       </div>
     );
 
-    const ProcessStep = ({ stepNum, title, shortDesc, scienceDesc, children }) => {
-      const [isOpen, setIsOpen] = React.useState(false);
-      return (
-        <div className="relative pl-6 border-l-2 border-orange-200">
-          <div className="absolute w-3 h-3 bg-orange-500 rounded-full -left-[7px] top-1.5"></div>
-          <div 
-            className="cursor-pointer hover:bg-slate-50 p-2 -ml-2 rounded-lg transition-colors flex justify-between items-start"
-            onClick={() => setIsOpen(!isOpen)}
-          >
-            <div>
-              <h3 className="font-bold text-slate-800 mb-1">{stepNum}. {title}</h3>
-              <p className="text-slate-600 text-sm">{shortDesc}</p>
-            </div>
-            {isOpen ? <ChevronDown className="w-5 h-5 text-slate-400 mt-1 shrink-0" /> : <ChevronRight className="w-5 h-5 text-slate-400 mt-1 shrink-0" />}
-          </div>
-          
-          {isOpen && (
-            <div className="mt-2 mb-4 ml-0 animate-in fade-in duration-200">
-              <div className="bg-orange-50/80 p-4 rounded-xl text-sm text-slate-700 border border-orange-100 shadow-inner space-y-3">
-                <div className="flex items-center gap-2 font-semibold text-orange-800">
-                  <Beaker className="w-4 h-4" /> The Science
-                </div>
-                <p className="leading-relaxed">{scienceDesc}</p>
-                {children && <div className="mt-4">{children}</div>}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    };
+    const PersistentTimer = ({ id, initialSeconds }) => {
+      const [endTime, setEndTime] = useState(null);
+      const [remaining, setRemaining] = useState(initialSeconds);
+      const [isActive, setIsActive] = useState(false);
 
-    const Timer = ({ initialSeconds }) => {
-      const [seconds, setSeconds] = React.useState(initialSeconds);
-      const [isActive, setIsActive] = React.useState(false);
-
-      React.useEffect(() => {
-        let interval = null;
-        if (isActive && seconds > 0) {
-          interval = setInterval(() => setSeconds(s => s - 1), 1000);
-        } else if (seconds === 0) {
-          setIsActive(false);
+      useEffect(() => {
+        let interval;
+        if (isActive && endTime) {
+          interval = setInterval(() => {
+            const now = Date.now();
+            const left = Math.max(0, Math.ceil((endTime - now) / 1000));
+            setRemaining(left);
+            if (left <= 0) setIsActive(false);
+          }, 200); 
         }
         return () => clearInterval(interval);
-      }, [isActive, seconds]);
+      }, [isActive, endTime]);
 
-      const toggle = () => setIsActive(!isActive);
-      const reset = () => { setIsActive(false); setSeconds(initialSeconds); };
+      const toggle = () => {
+        if (!isActive) {
+          if (remaining === 0) setRemaining(initialSeconds);
+          setEndTime(Date.now() + (remaining === 0 ? initialSeconds : remaining) * 1000);
+          setIsActive(true);
+        } else {
+          setIsActive(false);
+          setEndTime(null);
+        }
+      };
+
+      const reset = () => {
+        setIsActive(false);
+        setEndTime(null);
+        setRemaining(initialSeconds);
+      };
 
       return (
-        <div className="flex items-center gap-4 bg-orange-50 p-3 rounded-xl border border-orange-100">
-          <div className="text-3xl font-mono font-bold text-orange-600 tracking-wider w-24">
-            {formatTime(seconds)}
+        <div className="flex items-center gap-4 bg-slate-800 p-3 rounded-2xl shadow-inner mt-4 w-fit">
+          <div className="text-3xl font-mono font-bold text-white tracking-widest w-[110px] text-center">
+            {formatTime(remaining)}
           </div>
           <div className="flex gap-2">
             <button 
               onClick={toggle} 
-              className="p-3 bg-orange-500 hover:bg-orange-600 text-white rounded-full transition-colors"
+              className={`p-3 rounded-xl transition-all ${isActive ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30' : 'bg-orange-500 text-white hover:bg-orange-400 shadow-lg'}`}
             >
               {isActive ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
             </button>
             <button 
               onClick={reset} 
-              className="p-3 bg-white text-slate-600 hover:text-orange-600 rounded-full border border-slate-200 transition-colors"
+              className="p-3 bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-colors"
             >
               <RotateCcw className="w-5 h-5" />
             </button>
@@ -211,400 +204,603 @@
       );
     };
 
-    // ---------- Main App ----------
+    const ProcessStep = ({ stepNum, title, shortDesc, scienceDesc, instructionList, timerProps }) => {
+      const [isOpen, setIsOpen] = useState(false);
+      return (
+        <div className="relative pl-8 border-l-4 border-slate-200 pb-6 last:pb-0 last:border-transparent">
+          <div className="absolute w-5 h-5 bg-orange-500 rounded-full -left-[14.5px] top-1 border-4 border-stone-50 shadow-sm"></div>
+          
+          <div 
+            className="cursor-pointer group flex justify-between items-start -mt-1.5"
+            onClick={() => setIsOpen(!isOpen)}
+          >
+            <div>
+              <h3 className="font-bold text-lg text-slate-800 group-hover:text-orange-600 transition-colors flex items-center gap-2">
+                Step {stepNum}: {title}
+              </h3>
+              <p className="text-slate-600 mt-1">{shortDesc}</p>
+            </div>
+            <div className={`p-1.5 rounded-full bg-white border border-slate-200 shadow-sm transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}>
+              <ChevronDown className="w-4 h-4 text-slate-400" />
+            </div>
+          </div>
+          
+          <div className={`overflow-hidden transition-all duration-300 ${isOpen ? 'max-h-[1000px] opacity-100 mt-4' : 'max-h-0 opacity-0'}`}>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+              <ol className="list-decimal list-outside ml-4 space-y-3 text-slate-700 font-medium mb-6">
+                {instructionList.map((item, idx) => (
+                  <li key={idx} className="pl-2 leading-relaxed">{item}</li>
+                ))}
+              </ol>
+
+              {timerProps && <PersistentTimer {...timerProps} />}
+
+              <div className="mt-6 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                <div className="flex items-center gap-2 font-bold text-blue-800 mb-2 uppercase tracking-wider text-xs">
+                  <Beaker className="w-4 h-4" /> The Science & Technique
+                </div>
+                <p className="text-sm text-blue-900/80 leading-relaxed">{scienceDesc}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+
+    // ---------- Main Application ----------
+    
     function App() {
-      const [step, setStep] = React.useState(1);
-      const [isComplete, setIsComplete] = React.useState(false);
+      const [appState, setAppState] = useState('intro');
+      const [numDoughs, setNumDoughs] = useState(1);
       
-      const [cfg, setCfg] = React.useState({
-        style: "Classic",
-        flour: "Bread Flour",
-        yeast: "Instant",
-        balls: 3,
-        ballWeight: 250,
-        hydration: 63,
-        salt: 2.4,
-        oil: 1,
-        sugar: 0.5,
-        cold: false,
-        room: 72,
-        blendPct: 20,
-      });
+      const [wizDoughIdx, setWizDoughIdx] = useState(0);
+      const [step, setStep] = useState(1);
+      
+      const [viewDoughIdx, setViewDoughIdx] = useState(0);
 
-      const recipe = React.useMemo(() => computeRecipe(cfg), [cfg]);
-      const totalSteps = 5;
+      const defaultCfg = {
+        name: "Dough", style: "Custom Artisan",
+        balls: 3, ballWeight: 250,
+        flourBase: "Bread Flour", hasBlend: false, flourBlend: "Whole Wheat", blendPct: 20,
+        hydration: 65, salt: 2.4, oil: 1, sugar: 0,
+        cold: true, room: 72,
+      };
 
-      const handleNext = () => setStep(s => Math.min(totalSteps, s + 1));
-      const handlePrev = () => setStep(s => Math.max(1, s - 1));
+      const [configs, setConfigs] = useState([ { ...defaultCfg, name: "Dough A" }, { ...defaultCfg, name: "Dough B" } ]);
 
-      if (isComplete) {
+      const updateCfg = (idx, updates) => {
+        setConfigs(prev => {
+          const newConfigs = [...prev];
+          let c = { ...newConfigs[idx], ...updates };
+          
+          if (updates.style && updates.style !== prev[idx].style) {
+            const s = STYLES[updates.style];
+            c.flourBase = s.flour; c.hydration = s.h; c.salt = s.s; c.oil = s.o; c.sugar = s.sg; c.hasBlend = false; 
+          }
+
+          if (updates.flourBase || updates.flourBlend || updates.blendPct !== undefined || updates.hasBlend !== undefined) {
+            const idealH = calcIdealHydration(c.flourBase, c.hasBlend ? c.flourBlend : null, c.hasBlend ? c.blendPct : 0);
+            if (updates.flourBase || updates.flourBlend || updates.hasBlend !== undefined) {
+              c.hydration = idealH;
+            }
+          }
+
+          newConfigs[idx] = c;
+          return newConfigs;
+        });
+      };
+
+      // --- Screen: Intro ---
+      if (appState === 'intro') {
         return (
-          <div className="min-h-screen bg-stone-50 p-4 md:p-8 font-sans text-slate-800 flex justify-center">
-            <div className="w-full max-w-md space-y-6">
+          <div className="min-h-screen flex items-center justify-center p-4">
+            <div className="bg-white max-w-md w-full p-8 rounded-[2rem] shadow-xl text-center border border-slate-100">
+              <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Pizza className="w-10 h-10 text-orange-500" />
+              </div>
+              <h1 className="text-3xl font-black text-slate-800 mb-2 tracking-tight">D'ough!</h1>
+              <p className="text-slate-500 mb-8 font-medium">Advanced Artisan Pizza Calculator</p>
               
-              <header className="text-center space-y-2 mb-8 mt-4">
-                <div className="inline-flex items-center justify-center w-16 h-16 bg-orange-100 rounded-full mb-2">
-                  <Pizza className="w-8 h-8 text-orange-500" />
-                </div>
-                <h1 className="text-3xl font-bold text-slate-900">Your Recipe</h1>
-                <p className="text-slate-500">{cfg.style} Style • {cfg.balls} Pizzas</p>
-              </header>
-
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-                <div className="bg-orange-500 text-white p-4 flex justify-between items-center">
-                  <h2 className="font-semibold text-lg flex items-center gap-2">
-                    <ChefHat className="w-5 h-5" /> Ingredients
-                  </h2>
-                  <span className="text-orange-100 text-sm">{recipe.total}g Total</span>
-                </div>
-                <div className="p-0">
-                  {['flourMain', 'flourAlt', 'water', 'salt', 'yeast', 'oil', 'sugar'].map((k) => {
-                    if (recipe[k] <= 0) return null;
-                    const isMainFlour = k === 'flourMain';
-                    const isAltFlour = k === 'flourAlt';
-                    const isWater = k === 'water';
-                    
-                    let label = k;
-                    let pctLabel = `${cfg[k] || (isWater ? cfg.hydration : recipe.yPct)}%`;
-                    
-                    if (isMainFlour) {
-                      label = cfg.flour === 'Whole Wheat' || cfg.flour === 'Spelt Blend' ? 'White Flour Base' : cfg.flour;
-                      pctLabel = `${100 - (cfg.flour === 'Whole Wheat' || cfg.flour === 'Spelt Blend' ? cfg.blendPct : 0)}%`;
-                    } else if (isAltFlour) {
-                      label = cfg.flour;
-                      pctLabel = `${cfg.blendPct}%`;
-                    }
-
-                    return (
-                      <div key={k} className="flex justify-between items-center p-4 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
-                        <div>
-                          <div className="font-medium capitalize text-slate-800">
-                            {label}
-                            {k === 'yeast' && <span className="text-xs text-slate-400 font-normal ml-1">({cfg.yeast})</span>}
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            {pctLabel}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="font-bold text-lg text-slate-900">{recipe[k]}g</div>
-                          <div className="text-xs font-medium text-orange-500">
-                            {volHint(k.replace('Main','').replace('Alt',''), recipe[k], cfg.yeast)}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 space-y-6">
-                <h2 className="font-bold text-xl flex items-center gap-2 border-b border-slate-100 pb-4">
-                  <Clock className="w-5 h-5 text-orange-500" /> Process
-                </h2>
+              <div className="space-y-4 text-left">
+                <h2 className="font-bold text-slate-700 text-center mb-6">How many distinct doughs are you making today?</h2>
                 
-                <div className="space-y-4">
-                  <ProcessStep 
-                    stepNum={1} title="Mix & Autolyse" 
-                    shortDesc="Combine flour and water. Rest to hydrate."
-                    scienceDesc="Autolyse gives flour time to fully hydrate before kneading. Enzymes begin breaking down starches into sugars and proteins into extensible gluten. This makes the dough stretchier, improves flavor, and reduces your kneading time."
-                  >
-                    <Timer initialSeconds={1200} />
-                  </ProcessStep>
-
-                  <ProcessStep 
-                    stepNum={2} title="Knead" 
-                    shortDesc="Add salt, yeast, and remaining ingredients. Knead until smooth."
-                    scienceDesc="Kneading aligns gluten proteins into a strong web-like structure. Salt is added now because it tightens this network. A strong gluten network is what traps CO2 later, giving your crust those beautiful airy bubbles."
-                  />
-
-                  <ProcessStep 
-                    stepNum={3} title="Bulk Ferment" 
-                    shortDesc={`Cover and rest at room temp (${cfg.room}°F) for 2 hours, or until doubled.`}
-                    scienceDesc="During bulk fermentation, yeast consumes sugars to produce CO2 and alcohol. The large single mass regulates its own temperature better than individual balls, fostering complex organic acids which give the dough its characteristic flavor."
-                  />
-
-                  <ProcessStep 
-                    stepNum={4} title="Ball & Proof" 
-                    shortDesc={`Divide into ${cfg.balls} balls (${cfg.ballWeight}g). ${cfg.cold ? "Cold ferment in fridge 24-72h." : "Proof at room temp 1-2h."}`}
-                    scienceDesc="Dividing the dough reorganizes the gluten network. As it proofs, the yeast produces its final burst of CO2, relaxing the gluten so it stretches easily without snapping back. Cold fermentation slows this down, trading rapid rise for deep, complex flavor development."
-                  />
-                </div>
+                <button onClick={() => { setNumDoughs(1); setAppState('wizard'); setWizDoughIdx(0); setStep(1); }} 
+                        className="w-full flex items-center p-4 rounded-2xl border-2 border-slate-100 hover:border-orange-500 hover:bg-orange-50 transition-all group">
+                  <div className="bg-slate-100 group-hover:bg-orange-200 p-3 rounded-xl mr-4 transition-colors">
+                    <Pizza className="w-6 h-6 text-slate-600 group-hover:text-orange-600" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg text-slate-800 group-hover:text-orange-700">One Dough</div>
+                    <div className="text-sm text-slate-500">I'm making a single batch.</div>
+                  </div>
+                </button>
+                
+                <button onClick={() => { setNumDoughs(2); setAppState('wizard'); setWizDoughIdx(0); setStep(1); }} 
+                        className="w-full flex items-center p-4 rounded-2xl border-2 border-slate-100 hover:border-blue-500 hover:bg-blue-50 transition-all group">
+                  <div className="bg-slate-100 group-hover:bg-blue-200 p-3 rounded-xl mr-4 transition-colors">
+                    <div className="flex -space-x-2">
+                      <Pizza className="w-6 h-6 text-slate-600 group-hover:text-blue-600" />
+                      <Pizza className="w-6 h-6 text-slate-500 group-hover:text-blue-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-lg text-slate-800 group-hover:text-blue-700">Two Doughs</div>
+                    <div className="text-sm text-slate-500">Compare different styles side-by-side.</div>
+                  </div>
+                </button>
               </div>
-
-              <button 
-                onClick={() => { setIsComplete(false); setStep(1); }} 
-                className="w-full py-4 text-slate-500 font-medium hover:text-slate-800 flex items-center justify-center gap-2"
-              >
-                <RotateCcw className="w-4 h-4" /> Edit Configuration
-              </button>
             </div>
           </div>
         );
       }
 
-      return (
-        <div className="min-h-screen bg-stone-50 flex flex-col items-center p-4 md:p-8 font-sans text-slate-800">
-          <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden min-h-[500px] flex flex-col mt-4">
-            
-            {/* Header */}
-            <div className="bg-orange-500 p-6 text-white">
-              <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold flex items-center gap-2">
-                  <Pizza className="w-6 h-6" /> D'ough!
-                </h1>
-                <span className="text-orange-200 text-sm font-medium">Step {step} of {totalSteps}</span>
-              </div>
-              
-              {/* Progress Bar */}
-              <div className="flex gap-1 h-1.5 w-full bg-orange-600/50 rounded-full overflow-hidden">
-                {[...Array(totalSteps)].map((_, i) => (
-                  <div 
-                    key={i} 
-                    className={`h-full flex-1 rounded-full transition-all duration-300 ${i < step ? 'bg-white' : 'bg-transparent'}`} 
-                  />
-                ))}
-              </div>
-            </div>
+      // --- Screen: Wizard ---
+      if (appState === 'wizard') {
+        const cfg = configs[wizDoughIdx];
+        const setC = (updates) => updateCfg(wizDoughIdx, updates);
+        
+        const idealHydration = calcIdealHydration(cfg.flourBase, cfg.hasBlend ? cfg.flourBlend : null, cfg.hasBlend ? cfg.blendPct : 0);
 
-            {/* Content Body */}
-            <div className="p-6 flex-1 overflow-y-auto">
+        const nextStep = () => {
+          if (step < 4) {
+            setStep(s => s + 1);
+          } else {
+            if (numDoughs === 2 && wizDoughIdx === 0) {
+              setWizDoughIdx(1); setStep(1);
+            } else {
+              setAppState('recipes');
+            }
+          }
+        };
+
+        // --- Dynamic Advice Generators ---
+        const getPizzaAdvice = (n) => {
+          if (n <= 2) return "Perfect for a solo meal or a date night.";
+          if (n <= 5) return "Great for a family dinner. Manageable to bake in sequence.";
+          return "Pizza party! Ensure you have enough counter space to stretch and oven space to bake.";
+        };
+
+        const getWeightAdvice = (w) => {
+          if (w < 200) return `Small personal size (~8-10"). Cooks quickly, easy to stretch.`;
+          if (w <= 280) return `Standard size (~11-12"). The classic NY or Neapolitan slice sweet spot.`;
+          return `Large pie (13+"). Requires practice to stretch evenly without tearing the center!`;
+        };
+
+        const getBlendAdvice = (pct) => {
+          if (pct <= 15) return "Subtle flavor kick. Dough will handle almost exactly like the base flour.";
+          if (pct <= 30) return "Noticeable texture change and stronger earthy flavor. Requires a bit more water.";
+          return "Very dense, heavy, and earthy crust. High flavor, but less airy bubbles.";
+        };
+
+        const getHydrationAdvice = (h, ideal) => {
+          const diff = h - ideal;
+          if (diff < -3) return `Stiff dough (-${Math.abs(diff)}% from ideal). Easy to handle, yields a denser, crunchier, bread-like crust.`;
+          if (diff <= 3) return `Balanced hydration for your flour blend. Offers a great mix of workability and an airy, light crumb.`;
+          return `Wet dough (+${diff}% from ideal). Trickier to handle and shape, but rewards you with massive air pockets and a very delicate crust.`;
+        };
+
+        const getSaltAdvice = (s) => {
+          if (s < 2) return "Low salt. Dough will ferment very quickly and crust flavor may taste slightly flat.";
+          if (s <= 2.8) return "Standard artisan range. Perfectly balances flavor enhancement with gluten tightening.";
+          return "High salt. Tightens the gluten network significantly and slows yeast activity. Very savory.";
+        };
+
+        const getOilAdvice = (o) => {
+          if (o === 0) return "Lean dough. Essential for authentic Neapolitan; yields a crispy, airy, traditional crust.";
+          if (o <= 2) return "Standard addition. Slightly tenderizes the crumb, extends shelf life, and helps the crust brown.";
+          return "Rich dough. Very tender, softer, cake-like crumb. Great for pan pizzas and Sicilian style.";
+        };
+
+        const getSugarAdvice = (s) => {
+          if (s === 0) return "Traditional. Perfect if your oven reaches 650°F+ or if you're using a long cold ferment for browning.";
+          if (s <= 1.5) return "Aids browning in standard 500°F home ovens and adds a very subtle sweetness to the dough.";
+          return "Sweet dough. Will brown very rapidly in the oven—keep a close eye on it to prevent burning the bottom!";
+        };
+
+        const getTempAdvice = (t) => {
+          if (t < 68) return "Cool kitchen. Dough will rise slowly and naturally, developing more complex organic flavors.";
+          if (t <= 75) return "Ideal room temperature for a steady, predictable rise and yeast activity.";
+          return "Warm kitchen. Yeast will be highly active; your dough can overproof quickly if left unchecked!";
+        };
+
+        return (
+          <div className="min-h-screen pb-24 pt-4 md:pt-12 px-4 flex justify-center">
+            <div className="w-full max-w-lg bg-white rounded-[2rem] shadow-xl border border-slate-200 overflow-hidden flex flex-col min-h-[600px]">
               
-              {step === 1 && (
-                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                  <h2 className="text-xl font-bold mb-4 text-slate-800 flex items-center gap-2">
-                    <Settings className="w-5 h-5 text-orange-500" /> Choose Style
-                  </h2>
-                  <div className="space-y-3">
-                    {Object.keys(PRESETS).map(s => {
-                      const p = PRESETS[s];
-                      const isActive = cfg.style === s;
-                      return (
-                        <button 
-                          key={s} 
-                          className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 ${
-                            isActive ? 'border-orange-500 bg-orange-50' : 'border-slate-100 hover:border-orange-200 hover:bg-orange-50/50'
-                          }`}
-                          onClick={() => setCfg({
-                            ...cfg, style: s, hydration: p.h, salt: p.s, oil: p.o, sugar: p.sg
-                          })}
-                        >
-                          <div className="flex justify-between items-center">
-                            <span className="font-bold text-lg text-slate-800">{s}</span>
-                            {isActive && <Check className="w-5 h-5 text-orange-500" />}
+              {/* Wizard Header */}
+              <div className="bg-slate-900 text-white p-6 relative overflow-hidden">
+                <div className="absolute -right-10 -top-10 opacity-10">
+                  <Pizza className="w-48 h-48" />
+                </div>
+                <div className="relative z-10 flex justify-between items-end">
+                  <div>
+                    <div className="text-orange-400 font-bold uppercase tracking-widest text-xs mb-1">
+                      {numDoughs === 2 ? `Dough ${wizDoughIdx + 1} of 2` : 'Setup'}
+                    </div>
+                    <h2 className="text-2xl font-black">Configure {numDoughs === 2 ? (wizDoughIdx === 0 ? "Dough A" : "Dough B") : "Your Recipe"}</h2>
+                  </div>
+                  <div className="text-slate-400 text-sm font-medium">Step {step}/4</div>
+                </div>
+                
+                <div className="flex gap-2 mt-6 relative z-10">
+                  {[1, 2, 3, 4].map(i => (
+                    <div key={i} className={`h-1.5 flex-1 rounded-full transition-colors duration-500 ${i <= step ? 'bg-orange-500' : 'bg-slate-700'}`} />
+                  ))}
+                </div>
+              </div>
+
+              {/* Wizard Body */}
+              <div className="p-6 md:p-8 flex-1 overflow-y-auto hide-scrollbar">
+                
+                {step === 1 && (
+                  <div className="space-y-8 animate-slide-in">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <Flame className="w-5 h-5 text-orange-500" /> Target Style
+                      </h3>
+                      <div className="grid gap-3">
+                        {Object.keys(STYLES).map(s => (
+                          <div 
+                            key={s} onClick={() => setC({ style: s })}
+                            className={`p-4 rounded-2xl border-2 cursor-pointer transition-all ${cfg.style === s ? 'border-orange-500 bg-orange-50' : 'border-slate-100 hover:border-orange-200'}`}
+                          >
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="font-bold text-slate-800">{s}</span>
+                              {cfg.style === s && <Check className="w-5 h-5 text-orange-500" />}
+                            </div>
+                            <div className="text-sm text-slate-500 leading-snug">{STYLES[s].desc}</div>
                           </div>
-                          <div className="text-sm text-slate-500 mt-1">{p.desc}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {step === 2 && (
-                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                   <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2">
-                    <Scale className="w-5 h-5 text-orange-500" /> Ingredients
-                  </h2>
-                  
-                  <div className="space-y-6">
-                    <div>
-                      <label className="block font-medium text-slate-700 mb-2">Flour Type</label>
-                      <select 
-                        value={cfg.flour} 
-                        onChange={e => setCfg({...cfg, flour: e.target.value})} 
-                        className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition-all text-slate-800 font-medium"
-                      >
-                        <option>Bread Flour</option>
-                        <option>Type 00</option>
-                        <option>All Purpose</option>
-                        <option>Whole Wheat</option>
-                        <option>Spelt Blend</option>
-                      </select>
-                    </div>
-
-                    {(cfg.flour === 'Whole Wheat' || cfg.flour === 'Spelt Blend') && (
-                      <div className="animate-in fade-in slide-in-from-top-2">
-                        <RangeSlider 
-                          label={`${cfg.flour} Percentage`} 
-                          min={5} max={100} step={5} unit="%"
-                          value={cfg.blendPct} 
-                          onChange={v => setCfg({...cfg, blendPct: v})} 
-                          advice={
-                            cfg.blendPct < 20 ? "Mild flavor. Won't drastically change the dough texture." :
-                            cfg.blendPct <= 40 ? "Noticeable earthy flavor. Dough will be denser and need a bit more water." :
-                            "Strong, hearty flavor. Crust will be quite dense. Consider bumping up your hydration!"
-                          }
-                        />
+                        ))}
                       </div>
-                    )}
+                    </div>
 
+                    <div className="pt-6 border-t border-slate-100">
+                      <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                        <Scale className="w-5 h-5 text-orange-500" /> Yield
+                      </h3>
+                      <RangeSlider 
+                        label="Number of Pizzas" 
+                        min={1} max={12} value={cfg.balls} 
+                        onChange={v => setC({balls: v})} 
+                        advice={getPizzaAdvice(cfg.balls)}
+                      />
+                      <RangeSlider 
+                        label="Dough Ball Weight" 
+                        min={150} max={500} step={10} unit="g" value={cfg.ballWeight} 
+                        onChange={v => setC({ballWeight: v})}
+                        advice={getWeightAdvice(cfg.ballWeight)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {step === 2 && (
+                  <div className="space-y-8 animate-slide-in">
                     <div>
-                      <label className="block font-medium text-slate-700 mb-2">Yeast Type</label>
+                      <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                        <Wheat className="w-5 h-5 text-orange-500" /> Base Flour
+                      </h3>
                       <select 
-                        value={cfg.yeast} 
-                        onChange={e => setCfg({...cfg, yeast: e.target.value})} 
-                        className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition-all text-slate-800 font-medium"
+                        value={cfg.flourBase} onChange={e => setC({flourBase: e.target.value})}
+                        className="w-full bg-slate-50 border-2 border-slate-200 p-4 rounded-2xl outline-none focus:border-orange-500 font-bold text-slate-800 appearance-none"
                       >
-                        <option>Instant</option>
-                        <option>Active Dry</option>
-                        <option>Fresh</option>
+                        {Object.keys(FLOURS).map(f => <option key={f} value={f}>{f}</option>)}
                       </select>
+                      <p className="mt-3 text-sm text-slate-600 leading-relaxed bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                        <span className="font-bold text-blue-800 mr-1">Characteristics:</span> 
+                        {FLOURS[cfg.flourBase].desc}
+                      </p>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-100">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                          <Plus className="w-5 h-5 text-orange-500" /> Add Blend
+                        </h3>
+                        <button 
+                          onClick={() => setC({hasBlend: !cfg.hasBlend})}
+                          className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none ${cfg.hasBlend ? 'bg-orange-500' : 'bg-slate-200'}`}
+                        >
+                          <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-300 ${cfg.hasBlend ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+
+                      {cfg.hasBlend && (
+                        <div className="space-y-6 animate-slide-in">
+                          <select 
+                            value={cfg.flourBlend} onChange={e => setC({flourBlend: e.target.value})}
+                            className="w-full bg-slate-50 border-2 border-slate-200 p-4 rounded-2xl outline-none focus:border-orange-500 font-bold text-slate-800 appearance-none"
+                          >
+                            {Object.keys(FLOURS).filter(f => f !== cfg.flourBase).map(f => <option key={f} value={f}>{f}</option>)}
+                          </select>
+                          
+                          <RangeSlider 
+                            label={`${cfg.flourBlend} Percentage`} 
+                            min={5} max={50} step={5} unit="%" value={cfg.blendPct} 
+                            onChange={v => setC({blendPct: v})}
+                            advice={getBlendAdvice(cfg.blendPct)}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {step === 3 && (
-                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                   <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2">
-                    <Scale className="w-5 h-5 text-orange-500" /> Quantity
-                  </h2>
-                  
-                  <RangeSlider 
-                    label="Number of Pizzas" 
-                    min={1} max={20} 
-                    value={cfg.balls} 
-                    onChange={v => setCfg({...cfg, balls: v})} 
-                    advice={
-                      cfg.balls <= 2 ? "Perfect for a solo meal or a date night." :
-                      cfg.balls <= 5 ? "Great for a family dinner." :
-                      "Pizza party time! Make sure you have enough oven space."
-                    }
-                  />
-                  
-                  <RangeSlider 
-                    label="Dough Ball Weight" 
-                    min={150} max={600} step={5} 
-                    unit="g"
-                    value={cfg.ballWeight} 
-                    onChange={v => setCfg({...cfg, ballWeight: v})} 
-                    advice={
-                      cfg.ballWeight < 200 ? "Small/Personal size (8-10 inches). Yields a thinner crust." :
-                      cfg.ballWeight <= 280 ? "Standard size (10-12 inches). Perfect for classic Neapolitan or NY slices." :
-                      "Large size (13+ inches). Requires practice to stretch evenly without tearing!"
-                    }
-                  />
-                  
-                  <div className="bg-orange-50 text-orange-800 p-4 rounded-xl text-sm border border-orange-100 mt-8">
-                    <strong>Tip:</strong> A 250g dough ball typically makes a standard 10-12 inch pizza.
-                  </div>
-                </div>
-              )}
-
-              {step === 4 && (
-                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                  <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2">
-                    <Droplets className="w-5 h-5 text-orange-500" /> Dough Tuning
-                  </h2>
-                  
-                  <RangeSlider 
-                    label="Hydration" 
-                    min={50} max={90} step={1} unit="%"
-                    value={cfg.hydration} 
-                    onChange={v => setCfg({...cfg, hydration: v})} 
-                    advice={
-                      cfg.hydration < 60 ? "Stiffer dough. Easier to handle, yields a denser, crunchier crust." :
-                      cfg.hydration <= 65 ? "Standard hydration. Good balance of crispness and airy chew." :
-                      "Wetter dough. Harder to handle, but creates large air pockets and a very light, airy crust."
-                    }
-                  />
-                  
-                  <RangeSlider 
-                    label="Salt" 
-                    min={1.5} max={3.5} step={0.1} unit="%"
-                    value={cfg.salt} 
-                    onChange={v => setCfg({...cfg, salt: v})} 
-                    advice={
-                      cfg.salt < 2.0 ? "Low salt. Dough will ferment faster and may taste a bit flat." :
-                      cfg.salt <= 2.5 ? "Standard level. Balances flavor and gluten strength perfectly." :
-                      "High salt. Tightens the gluten network and noticeably slows down yeast activity."
-                    }
-                  />
-
-                  <div className="mt-8 pt-6 border-t border-slate-100 flex items-center justify-between">
+                {step === 3 && (
+                  <div className="space-y-8 animate-slide-in">
                     <div>
-                      <div className="font-bold text-slate-800">Cold Ferment</div>
-                      <div className="text-sm text-slate-500">Slow rise in fridge (24-72h)</div>
+                      <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                        <Droplets className="w-5 h-5 text-orange-500" /> Hydration
+                      </h3>
+                      <RangeSlider 
+                        label="Water Content" 
+                        min={50} max={85} step={1} unit="%" 
+                        value={cfg.hydration} onChange={v => setC({hydration: v})}
+                        recommended={idealHydration}
+                        advice={getHydrationAdvice(cfg.hydration, idealHydration)}
+                      />
                     </div>
-                    <button 
-                      onClick={() => setCfg({...cfg, cold: !cfg.cold})}
-                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors duration-300 focus:outline-none ${cfg.cold ? 'bg-orange-500' : 'bg-slate-200'}`}
-                    >
-                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform duration-300 shadow-sm ${cfg.cold ? 'translate-x-6' : 'translate-x-1'}`} />
-                    </button>
+
+                    <div className="pt-6 border-t border-slate-100">
+                      <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                        <Beaker className="w-5 h-5 text-orange-500" /> Modifiers
+                      </h3>
+                      <RangeSlider 
+                        label="Salt" 
+                        min={1.5} max={3.5} step={0.1} unit="%" value={cfg.salt} 
+                        onChange={v => setC({salt: v})}
+                        advice={getSaltAdvice(cfg.salt)}
+                      />
+                      <RangeSlider 
+                        label="Oil / Fat" 
+                        min={0} max={5} step={0.5} unit="%" value={cfg.oil} 
+                        onChange={v => setC({oil: v})}
+                        advice={getOilAdvice(cfg.oil)}
+                      />
+                      <RangeSlider 
+                        label="Sugar / Malt" 
+                        min={0} max={3} step={0.5} unit="%" value={cfg.sugar} 
+                        onChange={v => setC({sugar: v})}
+                        advice={getSugarAdvice(cfg.sugar)}
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {step === 5 && (
-                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-                   <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2">
-                    <Thermometer className="w-5 h-5 text-orange-500" /> Environment
-                  </h2>
-                  
-                  <p className="text-slate-600 mb-6">
-                    Room temperature impacts how quickly your dough proofs. We'll adjust your yeast percentage automatically.
-                  </p>
+                {step === 4 && (
+                  <div className="space-y-8 animate-slide-in">
+                    <div>
+                      <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                        <Thermometer className="w-5 h-5 text-orange-500" /> Environment
+                      </h3>
+                      <RangeSlider 
+                        label="Kitchen Temp" 
+                        min={60} max={90} step={1} unit="°F" value={cfg.room} 
+                        onChange={v => setC({room: v})}
+                        advice={getTempAdvice(cfg.room)}
+                      />
+                    </div>
 
-                  <RangeSlider 
-                    label="Kitchen Temperature" 
-                    min={60} max={95} step={1} unit="°F"
-                    value={cfg.room} 
-                    onChange={v => setCfg({...cfg, room: v})} 
-                    advice={
-                      cfg.room < 68 ? "Cool room. Dough will rise slowly, developing more complex flavors." :
-                      cfg.room <= 75 ? "Ideal temperature for a steady, predictable rise." :
-                      "Warm room. Yeast will be very active; keep a close eye on your dough so it doesn't overproof!"
-                    }
-                  />
+                    <div className="pt-6 border-t border-slate-100">
+                      <div className="flex items-center justify-between bg-blue-50/50 p-5 rounded-2xl border border-blue-100">
+                        <div>
+                          <div className="font-bold text-slate-800 flex items-center gap-2">
+                            Cold Fermentation
+                          </div>
+                          <div className="text-sm text-slate-500 mt-1 pr-4">Slows yeast activity for 24-72h in fridge. Develops incredible flavor.</div>
+                        </div>
+                        <button 
+                          onClick={() => setC({cold: !cfg.cold})}
+                          className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors duration-300 shrink-0 focus:outline-none ${cfg.cold ? 'bg-blue-500' : 'bg-slate-300'}`}
+                        >
+                          <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-sm transition-transform duration-300 ${cfg.cold ? 'translate-x-7' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                    </div>
 
-                  <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl mt-8">
-                    <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">Calculated Yeast</div>
-                    <div className="text-2xl font-bold text-slate-800">{yeastPct(cfg.cold, cfg.room).toFixed(2)}%</div>
-                    <div className="text-xs text-slate-400 mt-1">Adjusted for {cfg.room}°F {cfg.cold ? 'with cold ferment' : 'room temp ferment'}</div>
+                    <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg mt-8 border border-slate-700">
+                      <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Calculated Baker's Yeast</div>
+                      <div className="text-4xl font-black text-orange-400">{yeastPct(cfg.cold, cfg.room).toFixed(2)}%</div>
+                      <p className="text-sm text-slate-400 mt-2">
+                        Dynamically calculated for a {cfg.room}°F kitchen with a {cfg.cold ? 'long cold proof' : 'standard room temp proof'}.
+                      </p>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
-            </div>
-
-            {/* Footer Navigation */}
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-between items-center gap-4">
-              {step > 1 ? (
+              {/* Wizard Footer */}
+              <div className="p-6 bg-white border-t border-slate-200 flex justify-between rounded-b-[2rem]">
                 <button 
-                  onClick={handlePrev} 
-                  className="px-6 py-3 font-medium text-slate-600 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors flex items-center gap-2"
+                  onClick={() => setStep(s => Math.max(1, s - 1))} 
+                  className={`px-6 py-3 font-bold text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors flex items-center gap-2 ${step === 1 ? 'opacity-0 pointer-events-none' : ''}`}
                 >
                    <ChevronLeft className="w-4 h-4" /> Back
                 </button>
-              ) : (
-                <div /> // Spacer
-              )}
-              
-              {step < totalSteps ? (
+                
                 <button 
-                  onClick={handleNext} 
-                  className="px-6 py-3 font-medium text-white bg-slate-900 rounded-xl hover:bg-slate-800 transition-colors flex items-center gap-2 ml-auto shadow-sm"
+                  onClick={nextStep} 
+                  className="px-8 py-3 font-bold text-white bg-orange-500 rounded-xl hover:bg-orange-600 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
                 >
-                  Next <ChevronRight className="w-4 h-4" />
+                  {step < 4 ? 'Continue' : (numDoughs === 2 && wizDoughIdx === 0 ? 'Configure Dough B' : 'View Recipe(s)')} 
+                  <ChevronRight className="w-5 h-5" />
                 </button>
-              ) : (
-                <button 
-                  onClick={() => setIsComplete(true)} 
-                  className="px-8 py-3 font-bold text-white bg-orange-500 rounded-xl hover:bg-orange-600 transition-all transform hover:-translate-y-0.5 shadow-md flex items-center gap-2 ml-auto"
-                >
-                  View Recipe <Check className="w-5 h-5" />
-                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      }
+
+      // --- Screen: Recipes ---
+      if (appState === 'recipes') {
+        return (
+          <div className="min-h-screen bg-stone-100 p-4 md:p-8 flex flex-col items-center">
+            
+            <header className="w-full max-w-2xl mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-orange-200 rounded-full flex items-center justify-center shadow-sm">
+                  <Pizza className="w-6 h-6 text-orange-600" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-black text-slate-800 tracking-tight">Artisan Recipes</h1>
+                  <button onClick={() => setAppState('wizard')} className="text-sm font-medium text-orange-600 hover:text-orange-700 flex items-center gap-1 mt-0.5">
+                    <RotateCcw className="w-3 h-3" /> Edit Configurations
+                  </button>
+                </div>
+              </div>
+
+              {numDoughs === 2 && (
+                <div className="flex bg-slate-200 p-1 rounded-xl shadow-inner">
+                  {configs.map((c, idx) => (
+                    <button 
+                      key={idx}
+                      onClick={() => setViewDoughIdx(idx)}
+                      className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${viewDoughIdx === idx ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
               )}
+            </header>
+
+            <div className="w-full max-w-2xl relative">
+              {configs.slice(0, numDoughs).map((cfg, idx) => (
+                <div key={idx} className={viewDoughIdx === idx ? 'block animate-slide-in' : 'hidden'}>
+                  <RecipeView config={cfg} />
+                </div>
+              ))}
+            </div>
+
+          </div>
+        );
+      }
+
+      return null;
+    }
+
+    const RecipeView = ({ config }) => {
+      const recipe = useMemo(() => computeRecipe(config), [config]);
+
+      return (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-slate-900 text-white p-5 flex justify-between items-center">
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                <ChefHat className="w-5 h-5 text-orange-400" /> Ingredients
+              </h2>
+              <div className="text-right">
+                <span className="block font-bold">{recipe.total}g Total</span>
+                <span className="text-xs text-slate-400 font-medium">{config.balls} balls × {config.ballWeight}g</span>
+              </div>
             </div>
             
+            <div className="divide-y divide-slate-100">
+              <div className="flex justify-between items-center p-5 hover:bg-slate-50 transition-colors">
+                <div>
+                  <div className="font-bold text-slate-800">{config.flourBase}</div>
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">{config.hasBlend ? 100 - config.blendPct : 100}% Base</div>
+                </div>
+                <div className="text-xl font-black text-slate-900">{recipe.flourMain}g</div>
+              </div>
+
+              {config.hasBlend && (
+                <div className="flex justify-between items-center p-5 hover:bg-slate-50 transition-colors">
+                  <div>
+                    <div className="font-bold text-slate-800">{config.flourBlend}</div>
+                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">{config.blendPct}% Blend</div>
+                  </div>
+                  <div className="text-xl font-black text-slate-900">{recipe.flourAlt}g</div>
+                </div>
+              )}
+
+              <div className="flex justify-between items-center p-5 hover:bg-slate-50 transition-colors">
+                <div>
+                  <div className="font-bold text-blue-600 flex items-center gap-1.5"><Droplets className="w-4 h-4"/> Water (Warm)</div>
+                  <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-1">{config.hydration}% Hydration</div>
+                </div>
+                <div className="text-xl font-black text-slate-900">{recipe.water}g</div>
+              </div>
+
+              {['salt', 'yeast', 'oil', 'sugar'].map(k => {
+                if (recipe[k] <= 0) return null;
+                const labels = { salt: 'Sea Salt', yeast: 'Instant Yeast', oil: 'Olive Oil', sugar: 'Sugar / Malt' };
+                const pcts = { salt: config.salt, yeast: recipe.yPct, oil: config.oil, sugar: config.sugar };
+                return (
+                  <div key={k} className="flex justify-between items-center p-4 pl-5 hover:bg-slate-50 transition-colors bg-stone-50/50">
+                    <div>
+                      <div className="font-bold text-slate-700">{labels[k]}</div>
+                      <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{pcts[k]}%</div>
+                    </div>
+                    <div className="text-lg font-bold text-slate-800">{recipe[k]}g</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-8">
+            <h2 className="font-black text-2xl mb-8 flex items-center gap-3 border-b border-slate-100 pb-4 text-slate-800">
+              <Clock className="w-6 h-6 text-orange-500" /> Artisan Process
+            </h2>
+            
+            <div className="space-y-2">
+              <ProcessStep 
+                stepNum={1} title="Autolyse" 
+                shortDesc="Mix only flour and water. Let it rest."
+                instructionList={[
+                  `In a large bowl, mix ${recipe.flourMain}g ${config.flourBase} ${config.hasBlend ? `and ${recipe.flourAlt}g ${config.flourBlend}` : ''} with ${recipe.water}g water.`,
+                  "Mix until no dry flour remains. Do not knead yet.",
+                  "Cover with a damp towel and rest for 30 minutes."
+                ]}
+                scienceDesc="Autolyse gives flour time to fully absorb water. Enzymes begin breaking down starches into sugars (for flavor and browning) and proteins into extensible gluten. This makes the dough incredibly stretchy, deeply improves flavor, and significantly reduces your active kneading time. It is especially crucial for whole grain flours to soften the bran."
+                timerProps={{ id: `auto-${config.name}`, initialSeconds: 1800 }}
+              />
+
+              <ProcessStep 
+                stepNum={2} title="Final Mix & Knead" 
+                shortDesc="Incorporate yeast, salt, and knead until smooth."
+                instructionList={[
+                  `Sprinkle ${recipe.yeast}g yeast and ${recipe.salt}g salt over the dough.`,
+                  ...(config.oil > 0 || config.sugar > 0 ? [`Add ${config.oil ? `${recipe.oil}g oil` : ''} ${config.sugar ? `and ${recipe.sugar}g sugar` : ''}.`] : []),
+                  "Pinch the ingredients into the dough, then fold and knead for 8-10 minutes.",
+                  "Perform the Windowpane Test to check for readiness."
+                ]}
+                scienceDesc="Kneading aligns gluten proteins into a strong web-like structure. Salt tightens this network, which is why we add it after the autolyse. The 'Windowpane Test' dictates readiness: pinch off a golf-ball sized piece of dough and gently stretch it with your fingers. If you can stretch it thin enough to let light pass through without tearing, the gluten network is fully developed."
+              />
+
+              <ProcessStep 
+                stepNum={3} title="Bulk Fermentation" 
+                shortDesc={`Cover and rest at room temp (${config.room}°F) until doubled.`}
+                instructionList={[
+                  "Form dough into a smooth, tight ball.",
+                  "Place in a lightly oiled bowl, cover tightly.",
+                  `Leave at room temperature (${config.room}°F) for roughly 2 hours, or until doubled in volume.`,
+                  "Perform the Poke Test to confirm readiness."
+                ]}
+                scienceDesc="During bulk fermentation, the yeast consumes sugars to produce CO2 (rise) and ethanol (flavor). A single large mass regulates its own temperature better than individual balls, fostering complex organic acids. The 'Poke Test': press a floured finger half an inch into the dough. If it springs back instantly, it needs more time. If it springs back slowly and leaves a slight indentation, it's ready. If it collapses, it's overproofed!"
+                timerProps={{ id: `bulk-${config.name}`, initialSeconds: 7200 }}
+              />
+
+              <ProcessStep 
+                stepNum={4} title="Ball & Proof" 
+                shortDesc={`Divide into ${config.balls} balls. ${config.cold ? "Cold ferment in fridge." : "Proof at room temp."}`}
+                instructionList={[
+                  `Divide the dough into exactly ${config.balls} equal pieces weighing roughly ${config.ballWeight}g each.`,
+                  "Fold the edges of each piece into the center, flip it over, and drag it against the counter to pull the top surface taut.",
+                  config.cold ? "Place balls in oiled containers, seal tightly, and place in the refrigerator for 24-72 hours." : "Place balls in oiled containers, cover tightly, and proof at room temperature for 1-2 hours until relaxed and bubbly.",
+                  config.cold ? "Remove from fridge 2 hours before baking to allow the dough to reach room temperature." : "Proceed to stretching and baking!"
+                ]}
+                scienceDesc="Dividing the dough reorganizes the gluten network, making it tense again. The final proof allows the yeast to produce its final burst of CO2, relaxing the gluten so it stretches easily into a pizza shape without snapping back. Creating tension on the surface of the ball ensures it rises UP rather than flattening out into a puddle. Cold fermentation dramatically slows yeast activity but allows bacteria to continue producing lactic acid, resulting in a highly digestible, incredibly flavorful, and beautifully blistered crust."
+              />
+            </div>
           </div>
         </div>
       );
     }
 
-    // Initialize React and render the App component
     const root = createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>

@@ -89,7 +89,7 @@
     import { 
       Pizza, Play, Pause, RotateCcw, ChevronRight, ChevronLeft, 
       Check, Thermometer, Droplets, Scale, Clock, Settings, ChefHat,
-      ChevronDown, Info, Beaker, Plus, Minus, Wheat, Flame, BookOpen, X, ExternalLink
+      ChevronDown, Info, Beaker, Plus, Minus, Wheat, Flame, BookOpen, X, ExternalLink, Activity
     } from 'lucide-react';
 
     // ---------- Data & Constants ----------
@@ -109,6 +109,12 @@
       "NY Style": { flour: "Bread Flour", h: 63, s: 2.5, o: 2, sg: 1.5, desc: "The classic foldable slice. Crisp bottom, chewy edge, holds heavy toppings." },
       "Pan / Sicilian": { flour: "Bread Flour", h: 72, s: 2.2, o: 3, sg: 0, desc: "Baked in an oiled pan. Thick, airy crumb with a fried-like crispy bottom." },
       "Custom Artisan": { flour: "Bread Flour", h: 65, s: 2.4, o: 1, sg: 0, desc: "Blaze your own trail. You control all the variables." }
+    };
+
+    const YEAST_TYPES = {
+      "Instant (IDY)": { mult: 1.0, desc: "Mixes directly into dry flour. Highly reliable, fast-acting, and does not need to be bloomed in water." },
+      "Active Dry (ADY)": { mult: 1.25, desc: "Classic baker's yeast. Granules are coated in dead yeast cells, meaning it must be bloomed in warm water to activate." },
+      "Fresh (CY)": { mult: 3.0, desc: "Traditional cake yeast. Highly perishable but offers an unparalleled rich, deeply traditional flavor profile." }
     };
 
     const RESOURCES = [
@@ -157,7 +163,7 @@
       if (grams > 35 || grams <= 0) return null; // Only for small, non-zero amounts
       
       let density; // Grams per teaspoon
-      if (type === 'yeast') density = 3.1;
+      if (type === 'yeast') density = 3.1; // Assumes IDY/ADY. Fresh yeast volume not typically measured this way.
       else if (type === 'salt') density = 5.9;
       else if (type === 'oil') density = 4.5;
       else if (type === 'sugar') density = 4.2;
@@ -202,7 +208,8 @@
       return r0((baseH * ((100 - blendPct) / 100)) + (altH * (blendPct / 100)));
     };
 
-    function yeastPct(cold, temp) {
+    // Returns the base Instant Dry Yeast (IDY) percentage required.
+    function baseYeastPct(cold, temp) {
       let base = cold ? 0.25 : 0.5; 
       const tempDiff = temp - 72; 
       base = base * Math.pow(0.92, tempDiff); 
@@ -211,7 +218,12 @@
 
     function computeRecipe(cfg) {
       const totalWeight = cfg.balls * cfg.ballWeight;
-      const yPct = yeastPct(cfg.cold, cfg.room);
+      
+      // Calculate yeast based on type multiplier
+      const baseYeast = baseYeastPct(cfg.cold, cfg.room);
+      const yeastMultiplier = YEAST_TYPES[cfg.yeastType]?.mult || 1.0;
+      const yPct = baseYeast * yeastMultiplier;
+      
       const sumPct = 100 + cfg.hydration + cfg.salt + yPct + cfg.oil + cfg.sugar;
       
       const totalFlour = totalWeight * (100 / sumPct);
@@ -233,16 +245,30 @@
 
     // ---------- UI Components ----------
 
-    // Enhanced "Floury Finger" Friendly Slider
+    // Enhanced "Floury Finger" Friendly Slider with strict decimal precision
     const RangeSlider = ({ label, min, max, step = 1, value, onChange, unit = "", icon: Icon, advice = "", recommended = null }) => {
       
+      // Determine how many decimal places to show based on the step value
+      const precision = step.toString().split('.')[1]?.length || 0;
+
       const handleDec = useCallback(() => {
-        onChange(clamp(value - step, min, max));
-      }, [value, step, min, max, onChange]);
+        const nextVal = clamp(value - step, min, max);
+        onChange(Number(nextVal.toFixed(precision)));
+      }, [value, step, min, max, onChange, precision]);
 
       const handleInc = useCallback(() => {
-        onChange(clamp(value + step, min, max));
-      }, [value, step, min, max, onChange]);
+        const nextVal = clamp(value + step, min, max);
+        onChange(Number(nextVal.toFixed(precision)));
+      }, [value, step, min, max, onChange, precision]);
+
+      const handleSliderChange = useCallback((e) => {
+        const nextVal = parseFloat(e.target.value);
+        onChange(Number(nextVal.toFixed(precision)));
+      }, [onChange, precision]);
+
+      // Ensures the UI displays consistent decimals (e.g. "2.0" instead of "2" if step is 0.1)
+      const displayValue = Number.isFinite(value) ? value.toFixed(precision) : value;
+      const displayRecommended = recommended !== null ? recommended.toFixed(precision) : null;
 
       return (
         <div className="mb-8 animate-slide-in">
@@ -251,7 +277,7 @@
               {Icon && <Icon className="w-5 h-5 text-orange-500" />}
               {label}
             </label>
-            <div className="text-2xl font-black text-orange-600 tracking-tight">{value}{unit}</div>
+            <div className="text-2xl font-black text-orange-600 tracking-tight">{displayValue}{unit}</div>
           </div>
           
           <div className="flex items-center gap-4">
@@ -266,7 +292,7 @@
             <div className="relative flex-1 py-4">
               <input 
                 type="range" min={min} max={max} step={step} value={value} 
-                onChange={(e) => onChange(parseFloat(e.target.value))}
+                onChange={handleSliderChange}
                 className="fat-slider" 
               />
               {recommended !== null && (
@@ -275,7 +301,7 @@
                   style={{ left: `${((recommended - min) / (max - min)) * 100}%` }}
                 >
                   <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200 shadow-sm whitespace-nowrap">
-                    Ideal: {recommended}{unit}
+                    Ideal: {displayRecommended}{unit}
                   </div>
                 </div>
               )}
@@ -454,7 +480,7 @@
         balls: 3, ballWeight: 250,
         flourBase: "Bread Flour", hasBlend: false, flourBlend: "Whole Wheat", blendPct: 20,
         hydration: 64, salt: 2.2, oil: 3, sugar: 2,
-        cold: true, room: 72,
+        cold: true, room: 72, yeastType: "Instant (IDY)"
       };
 
       const [configs, setConfigs] = useState([ { ...defaultCfg, name: "Dough A" }, { ...defaultCfg, name: "Dough B" } ]);
@@ -581,14 +607,14 @@
         };
 
         const getSaltAdvice = (s) => {
-          if (s < 2) return "Low salt. Dough will ferment very quickly and crust flavor may taste slightly flat.";
+          if (s < 2.0) return "Low salt. Dough will ferment very quickly and crust flavor may taste slightly flat.";
           if (s <= 2.8) return "Standard artisan range. Perfectly balances flavor enhancement with gluten tightening.";
           return "High salt. Tightens the gluten network significantly and slows yeast activity. Very savory.";
         };
 
         const getOilAdvice = (o) => {
           if (o === 0) return "Lean dough. Essential for authentic Neapolitan; yields a crispy, airy, traditional crust.";
-          if (o <= 2) return "Standard addition. Slightly tenderizes the crumb, extends shelf life, and helps the crust brown.";
+          if (o <= 2.0) return "Standard addition. Slightly tenderizes the crumb, extends shelf life, and helps the crust brown.";
           return "Rich dough. Very tender, softer, cake-like crumb. Great for pan pizzas and Sicilian style.";
         };
 
@@ -603,6 +629,9 @@
           if (t <= 75) return "Ideal room temperature for a steady, predictable rise and yeast activity.";
           return "Warm kitchen. Yeast will be highly active; your dough can overproof quickly if left unchecked!";
         };
+        
+        // Compute displayed yeast multiplier info
+        const displayYeastPct = (baseYeastPct(cfg.cold, cfg.room) * (YEAST_TYPES[cfg.yeastType]?.mult || 1)).toFixed(2);
 
         return (
           <div className="min-h-screen pb-24 pt-0 md:pt-12 px-0 md:px-4 flex justify-center bg-stone-100">
@@ -778,6 +807,8 @@
 
                 {step === 4 && (
                   <div className="space-y-10 animate-slide-in">
+                    
+                    {/* Environment Controls */}
                     <div>
                       <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                         <Thermometer className="w-6 h-6 text-orange-500" /> Environment
@@ -788,18 +819,15 @@
                         onChange={v => setC({room: v})}
                         advice={getTempAdvice(cfg.room)}
                       />
-                    </div>
-
-                    <div className="pt-8 border-t border-slate-100">
                       <div 
-                        className="flex items-center justify-between bg-blue-50/80 p-6 rounded-2xl border border-blue-200 cursor-pointer touch-manipulation shadow-sm"
+                        className="mt-6 flex items-center justify-between bg-blue-50/80 p-5 rounded-2xl border border-blue-200 cursor-pointer touch-manipulation shadow-sm"
                         onClick={() => setC({cold: !cfg.cold})}
                       >
                         <div>
                           <div className="font-bold text-lg text-slate-800 flex items-center gap-2">
                             Cold Fermentation
                           </div>
-                          <div className="text-sm text-slate-600 mt-2 pr-4 leading-relaxed">Slows yeast activity for 24-72h in fridge. Develops incredible flavor.</div>
+                          <div className="text-sm text-slate-600 mt-1 pr-4 leading-relaxed">Slows yeast activity for 24-72h in fridge. Develops incredible flavor.</div>
                         </div>
                         <div 
                           className={`relative inline-flex h-9 w-16 items-center rounded-full transition-colors duration-300 shrink-0 focus:outline-none ${cfg.cold ? 'bg-blue-500' : 'bg-slate-300'}`}
@@ -809,12 +837,35 @@
                       </div>
                     </div>
 
+                    {/* Yeast Type Selection */}
+                    <div className="pt-8 border-t border-slate-100">
+                      <h3 className="text-xl font-bold text-slate-800 mb-5 flex items-center gap-2">
+                        <Activity className="w-6 h-6 text-orange-500" /> Yeast Selection
+                      </h3>
+                      <div className="relative">
+                        <select 
+                          value={cfg.yeastType} onChange={e => setC({yeastType: e.target.value})}
+                          className="w-full bg-slate-50 border-2 border-slate-200 p-5 rounded-2xl outline-none focus:border-orange-500 font-bold text-lg text-slate-800 appearance-none touch-manipulation shadow-sm"
+                        >
+                          {Object.keys(YEAST_TYPES).map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                        <ChevronDown className="w-6 h-6 text-slate-400 absolute right-5 top-1/2 transform -translate-y-1/2 pointer-events-none" />
+                      </div>
+                      <p className="mt-4 text-slate-600 leading-relaxed bg-amber-50/80 p-4 rounded-xl border border-amber-200 shadow-sm">
+                        <span className="font-bold text-amber-800 block mb-1">Handling & Math:</span> 
+                        {YEAST_TYPES[cfg.yeastType].desc}
+                      </p>
+                    </div>
+
                     <div className="bg-slate-900 text-white p-8 rounded-2xl shadow-xl mt-8 border border-slate-700 relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500 opacity-10 rounded-full blur-3xl transform translate-x-10 -translate-y-10"></div>
-                      <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 relative z-10">Calculated Baker's Yeast</div>
-                      <div className="text-5xl font-black text-orange-400 relative z-10">{yeastPct(cfg.cold, cfg.room).toFixed(2)}%</div>
-                      <p className="text-slate-400 mt-4 leading-relaxed relative z-10">
+                      <div className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-3 relative z-10">
+                        Calculated {cfg.yeastType.split(' ')[0]} Yeast
+                      </div>
+                      <div className="text-5xl font-black text-orange-400 relative z-10">{displayYeastPct}%</div>
+                      <p className="text-slate-400 mt-4 leading-relaxed relative z-10 text-sm">
                         Dynamically calculated for a {cfg.room}°F kitchen with a {cfg.cold ? 'long cold proof' : 'standard room temp proof'}.
+                        {YEAST_TYPES[cfg.yeastType].mult !== 1 && ` Adjusted internally by a ${YEAST_TYPES[cfg.yeastType].mult}x multiplier for your selected yeast type.`}
                       </p>
                     </div>
                   </div>
@@ -912,6 +963,15 @@
     const RecipeView = ({ config }) => {
       const recipe = useMemo(() => computeRecipe(config), [config]);
 
+      // Generate context-aware yeast instructions
+      let yeastInstruction = `Sprinkle ${recipe.yeast}g of ${config.yeastType.split(' ')[0]} Yeast and ${recipe.salt}g salt over the dough.`;
+      
+      if (config.yeastType === "Active Dry (ADY)") {
+        yeastInstruction = `In a small bowl, dissolve ${recipe.yeast}g of Active Dry Yeast in a small splash of warm water and let sit for 5-10 minutes until foamy. Add this to the dough along with the ${recipe.salt}g of salt.`;
+      } else if (config.yeastType === "Fresh (CY)") {
+        yeastInstruction = `Crumble the ${recipe.yeast}g of Fresh Yeast over the dough, and add the ${recipe.salt}g of salt.`;
+      }
+
       return (
         <div className="space-y-8">
           <div className="bg-white rounded-[2rem] shadow-md border border-slate-200 overflow-hidden">
@@ -947,16 +1007,25 @@
               <div className="flex justify-between items-center p-6 hover:bg-slate-50 transition-colors">
                 <div>
                   <div className="font-bold text-lg text-blue-600 flex items-center gap-2"><Droplets className="w-5 h-5"/> Water (Warm)</div>
-                  <div className="text-sm font-semibold text-slate-400 uppercase tracking-wider mt-1">{config.hydration}% Hydration</div>
+                  <div className="text-sm font-semibold text-slate-400 uppercase tracking-wider mt-1">{config.hydration.toFixed(1)}% Hydration</div>
                 </div>
                 <div className="text-2xl font-black text-slate-900">{recipe.water}g</div>
               </div>
 
               {['salt', 'yeast', 'oil', 'sugar'].map(k => {
                 if (recipe[k] <= 0) return null;
-                const labels = { salt: 'Sea Salt', yeast: 'Instant Yeast', oil: 'Olive Oil', sugar: 'Sugar / Malt' };
-                const pcts = { salt: config.salt, yeast: recipe.yPct, oil: config.oil, sugar: config.sugar };
-                const volString = getVolume(recipe[k], k);
+                
+                const labels = { 
+                  salt: 'Sea Salt', 
+                  yeast: config.yeastType.includes('Instant') ? 'Instant Yeast' : config.yeastType.includes('Active') ? 'Active Dry Yeast' : 'Fresh Cake Yeast', 
+                  oil: 'Olive Oil', 
+                  sugar: 'Sugar / Malt' 
+                };
+                
+                const pcts = { salt: config.salt.toFixed(1), yeast: recipe.yPct.toFixed(2), oil: config.oil.toFixed(1), sugar: config.sugar.toFixed(1) };
+                
+                // Do not attempt to calculate kitchen volume for Fresh Cake Yeast (it is usually weighed/cut)
+                const volString = (k === 'yeast' && config.yeastType.includes('Fresh')) ? null : getVolume(recipe[k], k);
                 
                 return (
                   <div key={k} className="flex justify-between items-center p-5 pl-6 hover:bg-slate-50 transition-colors bg-stone-50/50">
@@ -965,7 +1034,7 @@
                       <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mt-0.5">{pcts[k]}%</div>
                     </div>
                     <div className="text-right flex flex-col items-end">
-                      <div className="text-xl font-bold text-slate-800">{recipe[k]}g</div>
+                      <div className="text-xl font-bold text-slate-800">{recipe[k].toFixed(1)}g</div>
                       {volString && (
                         <div className="text-sm font-bold text-orange-600 mt-1 bg-orange-100/60 px-2 py-0.5 rounded-md inline-block whitespace-nowrap">
                           {volString}
@@ -1000,8 +1069,8 @@
                 stepNum={2} title="Final Mix & Knead" 
                 shortDesc="Incorporate yeast, salt, and knead until smooth."
                 instructionList={[
-                  `Sprinkle ${recipe.yeast}g yeast and ${recipe.salt}g salt over the dough.`,
-                  ...(config.oil > 0 || config.sugar > 0 ? [`Add ${config.oil ? `${recipe.oil}g oil` : ''} ${config.sugar ? `and ${recipe.sugar}g sugar` : ''}.`] : []),
+                  yeastInstruction,
+                  ...(config.oil > 0 || config.sugar > 0 ? [`Add ${config.oil ? `${recipe.oil.toFixed(1)}g oil` : ''} ${config.sugar ? `and ${recipe.sugar.toFixed(1)}g sugar` : ''}.`] : []),
                   "Pinch the ingredients into the dough, then fold and knead for 8-10 minutes.",
                   "Perform the Windowpane Test to check for readiness."
                 ]}

@@ -24,6 +24,8 @@
     .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     .animate-slide-in { animation: slideIn 0.3s ease-out forwards; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .animate-fade-in { animation: fadeIn 0.2s ease-out forwards; }
   </style>
 </head>
 <body class="bg-stone-100 text-slate-800 font-sans antialiased">
@@ -36,7 +38,7 @@
     import { 
       Pizza, Play, Pause, RotateCcw, ChevronRight, ChevronLeft, 
       Check, Thermometer, Droplets, Scale, Clock, Settings, ChefHat,
-      ChevronDown, Info, Beaker, Plus, Wheat, Flame
+      ChevronDown, Info, Beaker, Plus, Wheat, Flame, BookOpen, X, ExternalLink
     } from 'lucide-react';
 
     // ---------- Data & Constants ----------
@@ -51,11 +53,40 @@
     };
 
     const STYLES = {
-      "Neapolitan": { flour: "00 Flour", h: 62, s: 2.8, o: 0, sg: 0, desc: "Blistering hot oven. Thin center, puffy airy edges. Fast ferment." },
+      "Classic Home Oven": { flour: "Bread Flour", h: 64, s: 2.2, o: 3, sg: 2, desc: "Optimized for standard 500°F ovens. Oil and sugar guarantee a beautiful brown, crispy crust." },
+      "Neapolitan": { flour: "00 Flour", h: 62, s: 2.8, o: 0, sg: 0, desc: "Blistering hot oven (750°F+). Thin center, puffy airy edges. Fast ferment." },
       "NY Style": { flour: "Bread Flour", h: 63, s: 2.5, o: 2, sg: 1.5, desc: "The classic foldable slice. Crisp bottom, chewy edge, holds heavy toppings." },
       "Pan / Sicilian": { flour: "Bread Flour", h: 72, s: 2.2, o: 3, sg: 0, desc: "Baked in an oiled pan. Thick, airy crumb with a fried-like crispy bottom." },
       "Custom Artisan": { flour: "Bread Flour", h: 65, s: 2.4, o: 1, sg: 0, desc: "Blaze your own trail. You control all the variables." }
     };
+
+    const RESOURCES = [
+      {
+        title: "PizzaMaking.com Forums",
+        url: "https://www.pizzamaking.com/forum/",
+        desc: "The absolute holy grail for pizza obsessives. Decades of collective knowledge, dough troubleshooting, and highly technical discussions on every style imaginable."
+      },
+      {
+        title: "Vito Iacopelli (YouTube)",
+        url: "https://www.youtube.com/c/vitoiacopelli",
+        desc: "Master Neapolitan pizzaiolo. Incredible, energetic tutorials focusing on poolish, biga, and high-hydration stretching techniques ('soft and crunchy!')."
+      },
+      {
+        title: "Serious Eats: The Pizza Lab",
+        url: "https://www.seriouseats.com/pizza-recipes-5117816",
+        desc: "J. Kenji López-Alt's deep scientific dives into NY style, Pan pizza, and reverse-engineering restaurant classics for the home kitchen."
+      },
+      {
+        title: "Brian Lagerstrom (YouTube)",
+        url: "https://www.youtube.com/@BrianLagerstrom",
+        desc: "Former fine-dining chef providing highly approachable, restaurant-quality pizza recipes adapted specifically for standard home ovens."
+      },
+      {
+        title: "The Elements of Pizza (Book)",
+        url: "https://kensartisan.com/the-elements-of-pizza",
+        desc: "Ken Forkish's definitive book on artisan pizza at home. Essential reading for truly understanding dough fermentation and handling."
+      }
+    ];
 
     // ---------- Utilities ----------
     const clamp = (n, min, max) => Math.min(max, Math.max(min, Number.isFinite(n) ? n : min));
@@ -247,12 +278,48 @@
       );
     };
 
+    const ResourcesModal = ({ isOpen, onClose }) => {
+      if (!isOpen) return null;
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
+                <BookOpen className="w-7 h-7 text-orange-500" /> 
+                Artisan Resources
+              </h2>
+              <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500 hover:text-slate-800">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto hide-scrollbar space-y-4 flex-1">
+              <p className="text-slate-600 mb-6 font-medium">Ready to dive deeper down the rabbit hole? These are the absolute best corners of the internet to expand your pizza knowledge.</p>
+              
+              {RESOURCES.map((res, idx) => (
+                <a 
+                  key={idx} href={res.url} target="_blank" rel="noopener noreferrer"
+                  className="block p-5 rounded-2xl border-2 border-slate-100 hover:border-blue-200 hover:bg-blue-50 transition-all group"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="font-bold text-lg text-slate-800 group-hover:text-blue-700">{res.title}</h3>
+                    <ExternalLink className="w-5 h-5 text-slate-400 group-hover:text-blue-500" />
+                  </div>
+                  <p className="text-sm text-slate-600 leading-relaxed">{res.desc}</p>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
 
     // ---------- Main Application ----------
     
     function App() {
       const [appState, setAppState] = useState('intro');
       const [numDoughs, setNumDoughs] = useState(1);
+      const [showResources, setShowResources] = useState(false);
       
       const [wizDoughIdx, setWizDoughIdx] = useState(0);
       const [step, setStep] = useState(1);
@@ -260,10 +327,10 @@
       const [viewDoughIdx, setViewDoughIdx] = useState(0);
 
       const defaultCfg = {
-        name: "Dough", style: "Custom Artisan",
+        name: "Dough", style: "Classic Home Oven",
         balls: 3, ballWeight: 250,
         flourBase: "Bread Flour", hasBlend: false, flourBlend: "Whole Wheat", blendPct: 20,
-        hydration: 65, salt: 2.4, oil: 1, sugar: 0,
+        hydration: 64, salt: 2.2, oil: 3, sugar: 2,
         cold: true, room: 72,
       };
 
@@ -295,7 +362,17 @@
       if (appState === 'intro') {
         return (
           <div className="min-h-screen flex items-center justify-center p-4">
-            <div className="bg-white max-w-md w-full p-8 rounded-[2rem] shadow-xl text-center border border-slate-100">
+            <ResourcesModal isOpen={showResources} onClose={() => setShowResources(false)} />
+            
+            <div className="bg-white max-w-md w-full p-8 rounded-[2rem] shadow-xl text-center border border-slate-100 relative">
+              <button 
+                onClick={() => setShowResources(true)}
+                className="absolute top-6 right-6 p-2 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors"
+                title="Library & Resources"
+              >
+                <BookOpen className="w-6 h-6" />
+              </button>
+
               <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
                 <Pizza className="w-10 h-10 text-orange-500" />
               </div>
@@ -637,33 +714,50 @@
       if (appState === 'recipes') {
         return (
           <div className="min-h-screen bg-stone-100 p-4 md:p-8 flex flex-col items-center">
-            
+            <ResourcesModal isOpen={showResources} onClose={() => setShowResources(false)} />
+
             <header className="w-full max-w-2xl mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-orange-200 rounded-full flex items-center justify-center shadow-sm">
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="w-12 h-12 bg-orange-200 rounded-full flex items-center justify-center shadow-sm shrink-0">
                   <Pizza className="w-6 h-6 text-orange-600" />
                 </div>
-                <div>
+                <div className="flex-1">
                   <h1 className="text-2xl font-black text-slate-800 tracking-tight">Artisan Recipes</h1>
                   <button onClick={() => setAppState('wizard')} className="text-sm font-medium text-orange-600 hover:text-orange-700 flex items-center gap-1 mt-0.5">
                     <RotateCcw className="w-3 h-3" /> Edit Configurations
                   </button>
                 </div>
+                <button 
+                  onClick={() => setShowResources(true)}
+                  className="p-3 text-slate-500 hover:text-orange-600 bg-white rounded-xl shadow-sm border border-slate-200 md:hidden ml-auto"
+                >
+                  <BookOpen className="w-5 h-5" />
+                </button>
               </div>
 
-              {numDoughs === 2 && (
-                <div className="flex bg-slate-200 p-1 rounded-xl shadow-inner">
-                  {configs.map((c, idx) => (
-                    <button 
-                      key={idx}
-                      onClick={() => setViewDoughIdx(idx)}
-                      className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${viewDoughIdx === idx ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      {c.name}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {numDoughs === 2 && (
+                  <div className="flex bg-slate-200 p-1 rounded-xl shadow-inner">
+                    {configs.map((c, idx) => (
+                      <button 
+                        key={idx}
+                        onClick={() => setViewDoughIdx(idx)}
+                        className={`px-6 py-2 rounded-lg font-bold text-sm transition-all ${viewDoughIdx === idx ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                
+                <button 
+                  onClick={() => setShowResources(true)}
+                  className="hidden md:flex p-3 text-slate-500 hover:text-orange-600 bg-white rounded-xl shadow-sm border border-slate-200 transition-colors"
+                  title="Library & Resources"
+                >
+                  <BookOpen className="w-5 h-5" />
+                </button>
+              </div>
             </header>
 
             <div className="w-full max-w-2xl relative">
